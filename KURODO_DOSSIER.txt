@@ -1,0 +1,895 @@
+============================================================
+KURODO PROJECT DOSSIER
+============================================================
+
+Last Updated: 2026-10-08
+Current Version: 0.1.0
+Repository: https://github.com/CaptainPyro/kurodo
+
+============================================================
+1. PROJECT OVERVIEW
+============================================================
+
+Kurodo is a lightweight VS Code extension that provides a
+Claude Code-like agentic coding experience. It enables users
+to interact with Claude AI models directly within VS Code to
+perform software engineering tasks.
+
+Key capabilities:
+- Chat interface with streaming responses
+- File operations (read, write, edit, delete, list)
+- Terminal command execution with risk classification
+- Git integration (status, commit)
+- MCP (Model Context Protocol) server support
+- Session persistence
+- TRUE Auto Mode for autonomous routine work
+
+The project was created to provide a self-contained, privacy-
+respecting alternative to cloud-based coding assistants while
+maintaining robust security measures.
+
+============================================================
+2. CURRENT STATUS
+============================================================
+
+STATUS: v0.1 Release Candidate
+
+The extension is functionally complete for basic use:
+- All core tools implemented
+- Security hardening complete
+- Tests passing (28/28)
+- TypeScript compiles cleanly
+- Lint passes (warnings only)
+- VSIX packaging requires Node.js 20+ (documented limitation)
+
+Known Limitation:
+- VSIX packaging fails on Node.js 18 due to undici dependency
+- This is documented in README and is expected behavior
+- Development (F5) works on Node.js 18
+
+============================================================
+3. ARCHITECTURE
+============================================================
+
+The extension follows a layered architecture:
+
+USER
+  |
+  v
+WEBVIEW (Chat UI)
+  |
+  v
+CHAT VIEW PROVIDER (message routing)
+  |
+  v
+AGENT RUNTIME (conversation loop)
+  |
+  v
+ANTHROPIC PROVIDER (API communication)
+  |
+  v
+TOOL EXECUTOR (tool dispatch)
+  |
+  +---> PERMISSION ENGINE (risk evaluation)
+  |
+  +---> INDIVIDUAL TOOLS (FileTools, TerminalTools, etc.)
+  |
+  v
+TOOL RESULT --> back to AGENT RUNTIME --> PROVIDER --> UI
+
+============================================================
+4. SOURCE TREE / MODULE RESPONSIBILITIES
+============================================================
+
+src/
+├── extension.ts              # VS Code extension entry point
+│                             # Initializes SessionManager, MCPManager
+│                             # Registers commands and webview provider
+│
+├── agent/
+│   └── AgentRuntime.ts       # Core agent loop
+│                             # Manages conversation state
+│                             # Handles tool execution flow
+│                             # Integrates with MCPManager
+│
+├── provider/
+│   ├── types.ts              # Message, ContentBlock, StreamEvent
+│   │                         # ToolDefinition, ModelInfo, Provider
+│   │
+│   └── AnthropicProvider.ts  # Anthropic Messages API integration
+│                             # Streaming implementation
+│                             # Model registry (Sonnet 4, Opus 4, Haiku 3.5)
+│                             # Extended thinking (effort levels)
+│                             # System prompt
+│
+├── tools/
+│   ├── types.ts              # Tool, ToolCall, ToolResult, RiskLevel
+│   │
+│   ├── ToolExecutor.ts       # Tool registry and dispatch
+│   │                         # Risk level evaluation
+│   │                         # Approval flow coordination
+│   │
+│   ├── FileTools.ts          # ReadFileTool, WriteFileTool, EditFileTool
+│   │                         # ListFilesTool, DeleteFileTool
+│   │                         # Path validation (security)
+│   │
+│   ├── SearchTools.ts        # SearchFilesTool
+│   │                         # Regex and text search
+│   │
+│   └── TerminalTools.ts      # RunCommandTool, GitStatusTool, GitCommitTool
+│                             # Dangerous command detection
+│                             # Risk classification
+│
+├── permission/
+│   └── PermissionEngine.ts   # Policy evaluation
+│                             # Auto Mode logic
+│                             # Workspace boundary enforcement
+│                             # High-risk pattern detection
+│
+├── session/
+│   └── SessionManager.ts     # Session state management
+│                             # Persistence (VS Code globalState)
+│                             # Model/effort/autoMode settings
+│                             # Async initialization
+│
+├── mcp/
+│   ├── MCPConfig.ts          # MCP server configuration from settings
+│   │
+│   ├── MCPClient.ts          # JSON-RPC communication with MCP servers
+│   │                         # Process spawning and management
+│   │
+│   ├── MCPToolAdapter.ts     # Adapts MCP tools to internal Tool interface
+│   │
+│   └── MCPManager.ts         # MCP server lifecycle management
+│                             # Tool registration
+│
+├── ui/
+│   └── ChatViewProvider.ts   # Webview provider
+│                             # Message handling
+│                             # Tool approval UI
+│                             # Streaming display
+│                             # HTML/CSS/JS for chat interface
+│
+├── util/
+│   └── secrets.ts            # SecretStore wrapper
+│                             # API key management
+│                             # Secure storage via VS Code SecretStorage
+│
+└── test/
+    └── security.test.ts      # Security test suite
+                              # Path validation tests
+                              # Dangerous command detection tests
+
+============================================================
+5. AGENT RUNTIME
+============================================================
+
+Location: src/agent/AgentRuntime.ts
+
+The AgentRuntime manages the conversation loop:
+
+1. User sends message
+2. Message added to session
+3. Provider called with messages + tool definitions
+4. Streaming response received
+5. If tool calls present:
+   a. Evaluate risk level
+   b. Check permission engine
+   c. Request approval if needed
+   d. Execute tool
+   e. Add result to messages
+   f. Loop back to step 3
+6. If no tool calls, conversation turn complete
+
+States:
+- idle: Waiting for user input
+- processing: Generating response
+- tool_pending: Waiting for tool approval
+- error: Error occurred
+
+The runtime integrates with MCPManager to register MCP tools
+dynamically via refreshMCPTools().
+
+============================================================
+6. PROVIDER / ANTHROPIC INTEGRATION
+============================================================
+
+Location: src/provider/AnthropicProvider.ts
+
+Uses @anthropic-ai/sdk for API communication.
+
+Supported Models:
+- claude-sonnet-4-20250514 (Claude Sonnet 4)
+- claude-opus-4-20250514 (Claude Opus 4) - supports effort levels
+- claude-3-5-haiku-20241022 (Claude 3.5 Haiku)
+
+Features:
+- Streaming responses via messages.stream()
+- Tool use support
+- Extended thinking (effort levels) for Opus 4
+- System prompt defines Kurodo's personality and guidelines
+
+System Prompt Summary:
+- Identifies as "Kurodo, an AI coding assistant"
+- Lists capabilities (file ops, search, terminal, git)
+- Guidelines: concise, minimal edits, explain operations
+- Risk awareness: confirm before destructive actions
+
+Effort Levels (Opus 4 only):
+- low: 1024 budget tokens
+- medium: 4096 budget tokens
+- high: 16384 budget tokens
+
+============================================================
+7. TOOL SYSTEM
+============================================================
+
+Location: src/tools/
+
+Tools implement the Tool interface:
+- name: string
+- description: string
+- riskLevel: 'low' | 'medium' | 'high'
+- inputSchema: JSON Schema
+- execute(input, context): Promise<ToolResult>
+
+Registered Tools:
+
+FILE TOOLS (FileTools.ts):
+- read_file: Read file contents (low risk)
+- write_file: Create/overwrite file (medium risk)
+- edit_file: Find-and-replace edit (medium risk)
+- list_files: Glob pattern matching (low risk)
+- delete_file: Delete file (high risk)
+
+SEARCH TOOLS (SearchTools.ts):
+- search_files: Content search with regex (low risk)
+
+TERMINAL TOOLS (TerminalTools.ts):
+- run_command: Execute shell command (dynamic risk)
+- git_status: Get git status (low risk)
+- git_commit: Stage and commit (medium risk)
+
+MCP TOOLS:
+- Dynamically registered from MCP servers
+- Prefixed with mcp_{server}_{tool}
+- Default to medium risk
+
+============================================================
+8. PERMISSION ENGINE
+============================================================
+
+Location: src/permission/PermissionEngine.ts
+
+Evaluates tool calls against policies to determine:
+- allowed: boolean
+- requiresConfirmation: boolean
+- reason: string (if denied)
+
+Policies:
+
+1. High-Risk Pattern Policy
+   - Detects dangerous patterns (rm -rf, git reset --hard, etc.)
+   - Always requires confirmation for high-risk operations
+
+2. Auto Mode Policy
+   - Low risk: Always allowed
+   - Medium risk: Allowed in Auto Mode, confirmation otherwise
+   - High risk: Always requires confirmation
+
+3. Workspace Boundary Policy
+   - Defense-in-depth path validation
+   - Blocks operations outside workspace
+
+Always-Confirm Patterns:
+- delete_file tool
+- rm with recursive/force flags
+- git push --force
+- git reset --hard
+- git clean -f
+- DROP TABLE/DATABASE
+- format, mkfs, dd if=
+
+Always-Allow Patterns:
+- read_file
+- list_files
+- search_files
+- git_status
+
+============================================================
+9. AUTO MODE
+============================================================
+
+Auto Mode is a TRUE risk-based autonomous operation mode.
+
+When Auto Mode is ENABLED:
+- Low risk operations: Execute immediately
+- Medium risk operations: Execute immediately
+- High risk operations: Always require approval
+
+When Auto Mode is DISABLED:
+- Low risk operations: Execute immediately
+- Medium risk operations: Require approval
+- High risk operations: Require approval
+
+This enables the agent to work autonomously on routine tasks
+(file reads, searches, normal edits, safe commands) while
+maintaining safety for genuinely dangerous operations.
+
+============================================================
+10. FILESYSTEM SECURITY
+============================================================
+
+Location: src/tools/FileTools.ts (validatePath function)
+
+All file operations validate paths to prevent workspace escape:
+
+1. Resolve the workspace root to absolute path
+2. Resolve the target path (handling both relative and absolute)
+3. Compute relative path from workspace to target
+4. If relative path starts with '..' or is absolute, DENY
+
+This prevents:
+- Path traversal (../../../etc/passwd)
+- Absolute paths outside workspace (/etc/passwd)
+- Complex traversal (src/../../../etc/passwd)
+
+The validation is applied in:
+- ReadFileTool
+- WriteFileTool
+- EditFileTool
+- DeleteFileTool
+
+Additionally, the PermissionEngine has defense-in-depth
+workspace boundary checking.
+
+============================================================
+11. TERMINAL SECURITY
+============================================================
+
+Location: src/tools/TerminalTools.ts
+
+Commands are classified using regex patterns:
+
+DANGEROUS_PATTERNS (high risk):
+- rm -rf, rm -r, rm -f
+- rmdir, del /s
+- format, mkfs, dd if=
+- chmod 777, chown -R root
+- curl|bash, wget|sh, eval
+- git push --force, reset --hard, clean -f
+- DROP TABLE/DATABASE, TRUNCATE
+- shutdown, reboot, init 0-6
+- kill -9 -1, killall, pkill -9
+- Fork bombs
+- sudo rm, sudo dd
+- PATH manipulation
+- Credential file access
+
+SAFE_PATTERNS (low risk):
+- ls, dir, pwd
+- cat (without pipes), head, tail, less, more
+- grep, rg, find -name, which, whereis
+- git status/log/diff/branch/show
+- Version checks (node -v, npm -v, etc.)
+- npm list/ls/outdated/test/run/install
+- echo, env, printenv, whoami, hostname, date
+- df, du, free, ps, uname
+- make, cmake, cargo build/test, go build/test
+- cd, mkdir, touch
+
+Command chaining (;, &, |) triggers additional analysis
+of each part.
+
+============================================================
+12. MCP
+============================================================
+
+Location: src/mcp/
+
+MCP (Model Context Protocol) enables integration with external
+tool servers.
+
+Configuration:
+Settings key: kurodo.mcpServers
+Format: { "serverName": { command, args, env, cwd } }
+
+Example:
+{
+  "kurodo.mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path"]
+    }
+  }
+}
+
+Implementation:
+- MCPClient spawns server process
+- Communicates via JSON-RPC over stdio
+- Discovers tools via tools/list
+- Executes tools via tools/call
+- MCPToolAdapter wraps MCP tools as internal Tools
+- MCPManager coordinates server lifecycle
+- Configuration changes trigger automatic reconnection
+
+MCP tools are prefixed: mcp_{serverName}_{toolName}
+They default to medium risk level.
+
+============================================================
+13. SESSIONS
+============================================================
+
+Location: src/session/SessionManager.ts
+
+Sessions persist:
+- messages: conversation history
+- model: selected model ID
+- effortLevel: 'low' | 'medium' | 'high'
+- autoMode: boolean
+
+Storage:
+- Uses VS Code globalState for persistence
+- Sessions indexed by ID
+- Current session ID tracked separately
+
+Async Initialization:
+- Constructor starts async load (initPromise)
+- ensureInitialized() awaits completion
+- Prevents race conditions on startup
+
+Session Operations:
+- createSession(): New empty session
+- getCurrentSession(): Get or create current
+- addMessage(): Append and persist
+- clearCurrentSession(): Clear messages
+- updateModel/updateEffortLevel/updateAutoMode
+
+============================================================
+14. UI / UX
+============================================================
+
+Location: src/ui/ChatViewProvider.ts
+
+The chat interface is a VS Code webview panel.
+
+Features:
+- Message list with streaming display
+- Model selector dropdown
+- Effort level selector (disabled for non-Opus models)
+- Auto Mode toggle checkbox
+- New Session button
+- API key prompt (when missing)
+- Tool approval buttons (Allow/Deny)
+- Stop/Send button with state awareness
+
+Styling:
+- Uses VS Code CSS variables for theming
+- Responsive layout
+- Streaming indicator animation
+
+Security:
+- CSP: default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'
+- HTML escaping via escapeHtml() function
+- Message validation in handleMessage()
+
+============================================================
+15. MODEL & EFFORT SYSTEM
+============================================================
+
+Models are defined in AnthropicProvider.ts:
+
+Claude Sonnet 4:
+- ID: claude-sonnet-4-20250514
+- Context: 200K tokens
+- Effort levels: NOT supported
+
+Claude Opus 4:
+- ID: claude-opus-4-20250514
+- Context: 200K tokens
+- Effort levels: SUPPORTED (low/medium/high)
+
+Claude 3.5 Haiku:
+- ID: claude-3-5-haiku-20241022
+- Context: 200K tokens
+- Effort levels: NOT supported
+
+The UI disables the effort selector when the selected model
+doesn't support effort levels.
+
+============================================================
+16. STREAMING
+============================================================
+
+Streaming is implemented via the Anthropic SDK's stream() method.
+
+Events handled:
+- message_start: Begin message
+- content_block_start: Start of text or tool_use block
+- content_block_delta: Incremental content (text or JSON)
+- content_block_stop: End of block, parse tool input
+- message_stop/message_delta: End of message
+
+Text is streamed incrementally to the UI via agent events.
+Tool calls are collected and executed after the message completes.
+
+============================================================
+17. PROMPT CACHING
+============================================================
+
+The model capabilities include supportsPromptCaching: true for
+all models, but prompt caching is not explicitly implemented
+in the current request flow.
+
+This is a FUTURE enhancement opportunity.
+
+============================================================
+18. REMOTE ARCHITECTURE
+============================================================
+
+NOT IMPLEMENTED in v0.1.
+
+The architecture was designed with potential remote control
+in mind (session abstraction, protocol separation), but no
+remote interfaces exist.
+
+This is a FUTURE enhancement opportunity.
+
+============================================================
+19. VS CODE INTEGRATION
+============================================================
+
+Activation:
+- Trigger: onStartupFinished
+- Entry: src/extension.ts activate()
+
+Commands:
+- kurodo.start: Focus chat panel
+- kurodo.newSession: Create new session
+- kurodo.clearSession: Clear current session
+
+Views:
+- Activity bar container: "kurodo"
+- Webview view: "kurodo.chatView"
+
+Configuration:
+- kurodo.defaultModel
+- kurodo.autoMode
+- kurodo.effortLevel
+- kurodo.mcpServers
+
+============================================================
+20. CONFIGURATION
+============================================================
+
+package.json defines VS Code configuration schema:
+
+kurodo.defaultModel:
+  Type: string
+  Default: "claude-sonnet-4-20250514"
+
+kurodo.autoMode:
+  Type: boolean
+  Default: false
+
+kurodo.effortLevel:
+  Type: string (enum: low, medium, high)
+  Default: "medium"
+
+kurodo.mcpServers:
+  Type: object
+  Default: {}
+
+============================================================
+21. DEPENDENCIES
+============================================================
+
+Production:
+- @anthropic-ai/sdk: ^0.32.0 (Anthropic API client)
+- @modelcontextprotocol/sdk: ^1.32.1 (MCP protocol)
+
+Development:
+- @types/node: ^20.10.0
+- @types/vscode: ^1.85.0
+- @typescript-eslint/eslint-plugin: ^6.13.0
+- @typescript-eslint/parser: ^6.13.0
+- @vscode/vsce: ^2.22.0
+- eslint: ^8.54.0
+- typescript: ^5.3.0
+
+Node.js Requirements:
+- Development: Node.js 18+ works
+- VSIX Packaging: Node.js 20.18.1+ required (undici dependency)
+
+============================================================
+22. TESTING
+============================================================
+
+Location: src/test/security.test.ts
+
+Test Suite: 28 tests, all passing
+
+Path Validation Tests (7):
+- Simple relative path (allowed)
+- Nested relative path (allowed)
+- Path traversal with .. (blocked)
+- Absolute path outside workspace (blocked)
+- Absolute path inside workspace (allowed)
+- Complex traversal attempts (blocked)
+- Traversal in middle of path (blocked)
+
+Dangerous Command Detection Tests (21):
+- rm -rf (dangerous)
+- rm -r (dangerous)
+- rm -f (dangerous)
+- git push --force (dangerous)
+- git push -f (dangerous)
+- git reset --hard (dangerous)
+- git clean -f (dangerous)
+- DROP TABLE (dangerous)
+- curl | bash (dangerous)
+- wget | sh (dangerous)
+- dd if= (dangerous)
+- sudo rm (dangerous)
+- ls (safe)
+- pwd (safe)
+- git status (safe)
+- git log (safe)
+- npm test (safe)
+- npm run build (safe)
+- rm single-file.txt (NOT dangerous - no flags)
+- git push (NOT dangerous - no force)
+- curl without pipe (NOT dangerous)
+
+Run: npx ts-node src/test/security.test.ts
+
+============================================================
+23. BUILD / PACKAGING
+============================================================
+
+Scripts:
+- npm run compile: TypeScript compilation
+- npm run watch: Continuous compilation
+- npm run lint: ESLint
+- npm run package: VSIX packaging (requires Node 20+)
+
+Output:
+- out/: Compiled JavaScript
+- kurodo-0.1.0.vsix: Packaged extension (when built)
+
+TypeScript:
+- Strict mode enabled
+- Target: ES2020
+- Module: commonjs
+
+============================================================
+24. SECURITY
+============================================================
+
+Security Layers:
+
+1. Path Traversal Protection
+   - validatePath() in FileTools.ts
+   - Uses path.resolve() and path.relative()
+   - Blocks ../ and absolute paths outside workspace
+
+2. Dangerous Command Detection
+   - Regex patterns in TerminalTools.ts
+   - Comprehensive coverage of destructive operations
+   - Command chaining analysis
+
+3. Permission Engine
+   - Risk-based evaluation
+   - Defense-in-depth workspace boundary check
+   - Auto Mode with safety limits
+
+4. API Key Security
+   - Stored in VS Code SecretStorage
+   - Never logged or sent to webview
+   - Password input for entry
+
+5. Webview Security
+   - Restrictive CSP
+   - HTML escaping
+   - Message validation
+
+============================================================
+25. GIT HISTORY / IMPORTANT COMMITS
+============================================================
+
+462014c - Delete unnecessary file 'this.txt'
+         Initial cleanup
+
+a53e069 - Initial implementation of Kurodo VS Code extension
+         Complete initial implementation with all core features
+
+c3c56ad - Security hardening and fixes for v0.1 release
+         - Path traversal protection (validatePath)
+         - Dangerous command regex patterns
+         - Fixed PermissionEngine workspace boundary
+         - Fixed SessionManager async initialization
+         - Added MCP integration to extension.ts
+         - Added system prompt to AnthropicProvider
+         - Created security test suite
+
+e97b42f - Update README with security documentation and testing
+         - Added Security section
+         - Added Dangerous Command Detection section
+         - Added Testing section
+
+9c20bdb - Code quality improvements and ESLint configuration
+         - Added .eslintrc.json
+         - Fixed lint errors (case block declarations)
+         - Fixed unused variable warnings
+
+============================================================
+26. COMPLETED WORK
+============================================================
+
+Phase 1: Extension Skeleton
+[COMPLETE] package.json, tsconfig.json, extension.ts
+
+Phase 2: Core Architecture
+[COMPLETE] All layers implemented
+
+Phase 3: Provider Layer
+[COMPLETE] AnthropicProvider with streaming
+
+Phase 4: Tool System
+[COMPLETE] All file, search, terminal tools
+
+Phase 5: Permission Engine
+[COMPLETE] TRUE Auto Mode with risk classification
+
+Phase 6: Session System
+[COMPLETE] Persistence and restoration
+
+Phase 7: Chat UI
+[COMPLETE] Functional webview interface
+
+Phase 8: MCP Integration
+[COMPLETE] Server connection, tool discovery, execution
+
+Phase 9: Security Hardening
+[COMPLETE] Path validation, command detection, tests
+
+Phase 10: Code Quality
+[COMPLETE] ESLint configuration, lint fixes
+
+============================================================
+27. CURRENTLY IN PROGRESS
+============================================================
+
+Nothing currently in progress.
+
+Session is wrapping up with dossier creation.
+
+============================================================
+28. KNOWN BUGS
+============================================================
+
+None known at this time.
+
+============================================================
+29. KNOWN LIMITATIONS
+============================================================
+
+1. VSIX Packaging
+   - Requires Node.js 20.18.1+ due to undici dependency
+   - Development works on Node.js 18
+
+2. Prompt Caching
+   - Advertised in model capabilities but not implemented
+
+3. Remote Control
+   - Architecture supports it but not implemented
+
+4. VS Code Web
+   - Not tested or supported
+
+5. Effort Levels
+   - Only Claude Opus 4 supports effort levels
+   - UI correctly disables for other models
+
+6. npm audit
+   - 16 vulnerabilities reported (4 moderate, 12 high)
+   - All in dev dependencies, not production code
+
+============================================================
+30. TECHNICAL DEBT
+============================================================
+
+1. Unused variable in AgentRuntime (currentToolCall)
+2. Unused helper in security.test.ts (assertEqual)
+3. Prompt caching not implemented despite capability flag
+4. No VS Code extension test runner integration
+5. No CI/CD pipeline
+
+============================================================
+31. IMPORTANT DECISIONS
+============================================================
+
+1. TRUE Auto Mode
+   Decision: Auto Mode should be genuinely autonomous for
+   routine work, not just a "skip all prompts" toggle.
+   Rationale: Balance usability with safety.
+
+2. Defense-in-Depth Security
+   Decision: Validate paths in both tools AND permission engine.
+   Rationale: Multiple layers prevent security bypass.
+
+3. Regex-Based Command Detection
+   Decision: Use regex patterns instead of simple substrings.
+   Rationale: More accurate, handles variations and flags.
+
+4. MCP as Optional
+   Decision: Extension works without MCP servers.
+   Rationale: Simpler default experience.
+
+5. Session Persistence
+   Decision: Use VS Code globalState, not workspace state.
+   Rationale: Sessions persist across workspaces.
+
+============================================================
+32. REJECTED APPROACHES
+============================================================
+
+1. Simple Substring Matching for Commands
+   Rejected: Too easy to bypass (e.g., "rm" matches "mkdir")
+   Adopted: Regex patterns with word boundaries
+
+2. Path Validation via String Contains
+   Rejected: "../" check can be bypassed with encoding
+   Adopted: path.resolve() + path.relative() normalization
+
+3. Auto Mode as All-or-Nothing
+   Rejected: Either too restrictive or too dangerous
+   Adopted: Risk-based gradation
+
+============================================================
+33. FUTURE WORK
+============================================================
+
+Potential Enhancements:
+- Prompt caching implementation
+- Remote control API
+- VS Code Web support
+- More comprehensive test suite
+- CI/CD pipeline
+- Marketplace publishing
+- Additional model providers
+- Custom tool development API
+- Conversation export/import
+- Multi-workspace support
+
+============================================================
+34. NEXT SESSION INSTRUCTIONS
+============================================================
+
+The v0.1 release candidate is complete.
+
+Next session should:
+
+1. Read CLAUDE_HANDOFF.md first
+2. Verify git status is clean
+3. If user wants to test:
+   - Press F5 in VS Code to launch Extension Development Host
+   - Set API key when prompted
+   - Test chat functionality
+4. If user wants to package:
+   - Ensure Node.js 20+ is available
+   - Run: npm run package
+5. If user wants new features:
+   - Review this dossier for context
+   - Plan carefully before implementation
+
+Do NOT begin new work without user direction.
+
+============================================================
+35. LAST UPDATED
+============================================================
+
+Date: 2026-10-08
+Commit: 9c20bdb
+Session: v0.1 verification and dossier creation
+Author: Claude (via Claude Code)
