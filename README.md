@@ -67,6 +67,25 @@ Set your API key when prompted, or configure in settings:
 - **Medium Risk** (auto-approved in Auto Mode): Write files, edit files, commits
 - **High Risk** (always requires approval): Delete files, destructive commands, force push
 
+### Dangerous Command Detection
+
+The following command patterns are blocked or require explicit approval:
+- Recursive deletion (`rm -rf`, `rm -r`)
+- Git destructive operations (`git push --force`, `git reset --hard`, `git clean -f`)
+- Database destruction (`DROP TABLE`, `TRUNCATE`)
+- Remote code execution (`curl | bash`, `wget | sh`)
+- Disk operations (`dd if=`, writing to /dev/*)
+- Privileged deletion (`sudo rm`)
+
+## Security
+
+Kurodo implements multiple layers of security:
+
+1. **Path Traversal Protection**: All file operations validate paths to prevent access outside the workspace
+2. **Command Risk Classification**: Shell commands are analyzed using regex patterns to detect dangerous operations
+3. **Workspace Boundary Enforcement**: Defense-in-depth validation in both tools and permission engine
+4. **Secure API Key Storage**: Uses VS Code's SecretStorage API
+
 ## Development
 
 ```bash
@@ -74,6 +93,19 @@ npm install
 npm run compile
 npm run watch  # for continuous compilation
 ```
+
+## Testing
+
+Run security tests:
+
+```bash
+npx ts-node src/test/security.test.ts
+```
+
+The test suite verifies:
+- Path traversal protection
+- Dangerous command pattern detection
+- Safe command recognition
 
 ## Architecture
 
@@ -87,7 +119,8 @@ src/
 ├── session/             # Session management
 ├── mcp/                 # MCP integration
 ├── ui/                  # Webview components
-└── util/                # Utilities
+├── util/                # Utilities
+└── test/                # Test suite
 ```
 
 ## License
