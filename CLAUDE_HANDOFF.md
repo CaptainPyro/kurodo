@@ -3,8 +3,9 @@
 ## Current State
 
 **Version:** 0.1.0 (Release Candidate)
-**Status:** Functional, tested, ready for use
-**Last Commit:** 9c20bdb (Code quality improvements and ESLint configuration)
+**Status:** Packaged, installed, ready for dogfooding
+**Last Commit:** See git log (dossiers updated after packaging)
+**VSIX:** dist/kurodo-0.1.0.vsix (72 KB, 74 files)
 
 ## Architecture
 
@@ -36,9 +37,18 @@ src/
    - ESLint configuration added
    - Lint errors fixed
 
+4. **Dossier System** (4b66e2b)
+   - Created KURODO_DOSSIER.txt and CLAUDE_HANDOFF.md
+
+5. **Packaging & Installation**
+   - Added .vscodeignore for clean VSIX
+   - Packaged with Node 20.20.2
+   - Installed into local VS Code
+   - Extension ID: kurodo.kurodo@0.1.0
+
 ## Current Work
 
-None. Session wrapped up with dossier creation.
+Dogfooding phase - extension is installed and ready for real use.
 
 ## Known Issues
 
@@ -129,7 +139,7 @@ The extension is ready for:
 
 ## NEXT SESSION - START HERE
 
-**Kurodo v0.1 is complete.**
+**Kurodo v0.1 is packaged and installed.**
 
 The extension provides Claude Code-like agentic coding in VS Code with:
 - Chat interface with streaming
@@ -138,25 +148,26 @@ The extension provides Claude Code-like agentic coding in VS Code with:
 - MCP support
 - Session persistence
 
-**Verified:**
-- TypeScript compiles cleanly
-- Lint passes (warnings only)
-- 28 security tests pass
-- Git is clean and pushed
+**Packaging verified:**
+- Node 20.20.2 used for packaging
+- VSIX: dist/kurodo-0.1.0.vsix (72 KB)
+- Installed: kurodo.kurodo@0.1.0
+- Clean contents (no secrets, no node_modules)
 
 **What to check first:**
-1. `git status` - Should be clean
-2. `git log --oneline -5` - Latest should be 9c20bdb or dossier commit
+1. `git status` - Check for uncommitted changes
+2. `code --list-extensions | grep kurodo` - Verify installation
+3. Reload VS Code window if needed
 
-**Highest priority remaining:**
-- None for v0.1
-- Future: Prompt caching, remote control, more tests
+**For dogfooding:**
+1. Reload VS Code window (Ctrl+Shift+P → "Reload Window")
+2. Click Kurodo icon in activity bar (robot icon)
+3. Set Anthropic API key when prompted
+4. Test chat, file operations, terminal commands
 
 **Blockers:** None
 
-**Most relevant files:** Listed above in "Relevant Files"
-
-**Current baseline:** Commit 9c20bdb (or subsequent dossier commit)
+**VSIX location:** dist/kurodo-0.1.0.vsix
 
 ---
 

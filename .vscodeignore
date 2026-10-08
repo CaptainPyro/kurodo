@@ -1,0 +1,35 @@
+# Source files (compiled output in out/ is used)
+src/**
+*.ts
+tsconfig.json
+
+# Development configuration
+.eslintrc.json
+.editorconfig
+
+# Node modules (bundled dependencies handled separately)
+node_modules/**
+
+# Git
+.git/**
+.gitignore
+
+# Claude Code local settings
+.claude/**
+
+# Dossiers (development documentation)
+KURODO_DOSSIER.txt
+CLAUDE_HANDOFF.md
+
+# Test files
+**/*.test.ts
+**/test/**
+
+# Build artifacts
+*.vsix
+dist/**
+
+# Misc
+.DS_Store
+*.log
+*.map

@@ -31,13 +31,19 @@ A lightweight VS Code extension providing Claude Code-like agentic coding experi
 
 ### From VSIX
 
-Requires Node.js 20+ to package:
+**Packaging** (requires Node.js 20+):
 
 ```bash
-npm run package
+npm run package -- --out dist/kurodo-0.1.0.vsix
 ```
 
-Then install the generated `.vsix` file in VS Code.
+**Installation**:
+
+```bash
+code --install-extension dist/kurodo-0.1.0.vsix
+```
+
+Then reload VS Code window (`Ctrl+Shift+P` → "Reload Window").
 
 ## Configuration
 

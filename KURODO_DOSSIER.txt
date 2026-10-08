@@ -32,19 +32,26 @@ maintaining robust security measures.
 2. CURRENT STATUS
 ============================================================
 
-STATUS: v0.1 Release Candidate
+STATUS: v0.1 Packaged and Installed
 
-The extension is functionally complete for basic use:
+The extension is packaged and ready for dogfooding:
 - All core tools implemented
 - Security hardening complete
 - Tests passing (28/28)
 - TypeScript compiles cleanly
 - Lint passes (warnings only)
-- VSIX packaging requires Node.js 20+ (documented limitation)
+- VSIX packaged with Node.js 20.20.2
+- Installed into local VS Code
+
+Packaging Details:
+- VSIX file: dist/kurodo-0.1.0.vsix
+- Size: 72 KB (74 files)
+- Extension ID: kurodo.kurodo
+- Installed version: 0.1.0
+- Node version used: 20.20.2 (via nvm)
 
 Known Limitation:
-- VSIX packaging fails on Node.js 18 due to undici dependency
-- This is documented in README and is expected behavior
+- VSIX packaging requires Node.js 20+ due to undici dependency
 - Development (F5) works on Node.js 18
 
 ============================================================
@@ -722,6 +729,16 @@ e97b42f - Update README with security documentation and testing
          - Fixed lint errors (case block declarations)
          - Fixed unused variable warnings
 
+4b66e2b - Add project dossiers for session continuity
+         - KURODO_DOSSIER.txt: Exhaustive human-readable documentation
+         - CLAUDE_HANDOFF.md: Concise Claude session handoff
+
+(next)  - Package and install for dogfooding
+         - Added .vscodeignore for clean VSIX
+         - Updated README with installation instructions
+         - Packaged with Node 20.20.2
+         - Installed into local VS Code
+
 ============================================================
 26. COMPLETED WORK
 ============================================================
@@ -760,9 +777,15 @@ Phase 10: Code Quality
 27. CURRENTLY IN PROGRESS
 ============================================================
 
-Nothing currently in progress.
+Dogfooding phase.
 
-Session is wrapping up with dossier creation.
+Extension is packaged and installed, ready for real-world use.
+
+To begin dogfooding:
+1. Reload VS Code window (Ctrl+Shift+P → "Reload Window")
+2. Click Kurodo icon in activity bar
+3. Set Anthropic API key when prompted
+4. Test basic functionality
 
 ============================================================
 28. KNOWN BUGS
@@ -890,6 +913,12 @@ Do NOT begin new work without user direction.
 ============================================================
 
 Date: 2026-10-08
-Commit: 9c20bdb
-Session: v0.1 verification and dossier creation
+Commit: (packaging commit)
+Session: v0.1 packaging and installation for dogfooding
 Author: Claude (via Claude Code)
+
+Packaging details:
+- Node version: 20.20.2 (via nvm at ~/.config/nvm)
+- VSIX file: dist/kurodo-0.1.0.vsix
+- Size: 72 KB
+- Installation: code --install-extension dist/kurodo-0.1.0.vsix
