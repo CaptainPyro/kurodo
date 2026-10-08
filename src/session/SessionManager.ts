@@ -26,25 +26,43 @@ const CURRENT_SESSION_KEY = 'kurodo.currentSessionId';
 
 export class SessionManager {
     private currentSession: SessionState | null = null;
+    private initPromise: Promise<void> | null = null;
+    private initialized = false;
 
     constructor(
         private readonly context: vscode.ExtensionContext,
         private readonly secretStore: SecretStore
     ) {
-        this.loadCurrentSession();
+        // Start initialization but don't block constructor
+        this.initPromise = this.loadCurrentSession();
     }
 
     private get storage(): vscode.Memento {
         return this.context.globalState;
     }
 
-    private async loadCurrentSession(): Promise<void> {
-        const currentId = this.storage.get<string>(CURRENT_SESSION_KEY);
-        if (currentId) {
-            this.currentSession = await this.loadSession(currentId);
+    /**
+     * Ensures the session manager is fully initialized.
+     * Call this before accessing session data to ensure persistence is loaded.
+     */
+    async ensureInitialized(): Promise<void> {
+        if (this.initialized) return;
+        if (this.initPromise) {
+            await this.initPromise;
         }
-        if (!this.currentSession) {
-            this.createSession();
+    }
+
+    private async loadCurrentSession(): Promise<void> {
+        try {
+            const currentId = this.storage.get<string>(CURRENT_SESSION_KEY);
+            if (currentId) {
+                this.currentSession = await this.loadSession(currentId);
+            }
+            if (!this.currentSession) {
+                this.createSession();
+            }
+        } finally {
+            this.initialized = true;
         }
     }
 
@@ -66,6 +84,8 @@ export class SessionManager {
     }
 
     getCurrentSession(): SessionState {
+        // If not initialized and no session, create one synchronously
+        // The persisted session will be loaded asynchronously
         if (!this.currentSession) {
             this.createSession();
         }

@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import * as path from 'path';
 import { RiskLevel, ToolCall } from '../tools/types';
 
 export interface PermissionDecision {
@@ -17,21 +18,16 @@ export interface PermissionPolicy {
 const ALWAYS_CONFIRM_PATTERNS = [
     // Destructive file operations
     /^delete_file$/,
-    // Dangerous command patterns
-    /rm\s+-rf?\s/i,
-    /rm\s+-r\s/i,
-    /git\s+push\s+(--force|-f)/i,
-    /git\s+reset\s+--hard/i,
-    /drop\s+(database|table)/i,
-    /truncate\s+table/i,
-    /format\s+/i,
-    /mkfs\./i,
-    /dd\s+if=/i,
-    // Credential/secret access
-    /\.env/i,
-    /credentials/i,
-    /secrets?\./i,
-    /api[_-]?key/i
+    // Dangerous command patterns (defense in depth, also checked in TerminalTools)
+    /\brm\s+(-[a-zA-Z]*r|--recursive)/i,
+    /\bgit\s+push\s+(-[a-zA-Z]*f|--force)/i,
+    /\bgit\s+reset\s+--hard/i,
+    /\bgit\s+clean\s+-[a-zA-Z]*f/i,
+    /\bdrop\s+(database|table)/i,
+    /\btruncate\s+table/i,
+    /\bformat\b/i,
+    /\bmkfs\b/i,
+    /\bdd\s+if=/i
 ];
 
 // Patterns that are safe even without auto mode
@@ -41,6 +37,26 @@ const ALWAYS_ALLOW_PATTERNS = [
     /^search_files$/,
     /^git_status$/
 ];
+
+/**
+ * Check if a path is within the workspace (defense in depth).
+ * Primary validation is in FileTools, this is a secondary check.
+ */
+function isPathWithinWorkspace(filePath: string, workspaceRoot: string): boolean {
+    if (!filePath || !workspaceRoot) return true;
+
+    const normalizedRoot = path.resolve(workspaceRoot);
+    let fullPath: string;
+
+    if (path.isAbsolute(filePath)) {
+        fullPath = path.resolve(filePath);
+    } else {
+        fullPath = path.resolve(normalizedRoot, filePath);
+    }
+
+    const relativePath = path.relative(normalizedRoot, fullPath);
+    return !relativePath.startsWith('..') && !path.isAbsolute(relativePath);
+}
 
 export class PermissionEngine {
     private policies: PermissionPolicy[] = [];
@@ -102,7 +118,7 @@ export class PermissionEngine {
             }
         });
 
-        // Workspace boundary policy
+        // Workspace boundary policy (defense in depth)
         this.policies.push({
             name: 'workspace-boundary',
             description: 'Prevent operations outside workspace',
@@ -117,12 +133,14 @@ export class PermissionEngine {
                     return { allowed: true, requiresConfirmation: false };
                 }
 
-                // Check for path traversal attempts
-                if (filePath.includes('..') && filePath.startsWith('/')) {
+                const workspaceRoot = workspaceFolders[0].uri.fsPath;
+
+                // Check if path is within workspace bounds
+                if (!isPathWithinWorkspace(filePath, workspaceRoot)) {
                     return {
                         allowed: false,
                         requiresConfirmation: true,
-                        reason: 'Path traversal outside workspace detected'
+                        reason: `Path "${filePath}" is outside the workspace. Access denied.`
                     };
                 }
 

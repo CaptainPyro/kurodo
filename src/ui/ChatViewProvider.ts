@@ -3,6 +3,7 @@ import { SessionManager } from '../session/SessionManager';
 import { AgentRuntime, AgentEvent } from '../agent/AgentRuntime';
 import { ToolExecution } from '../tools/types';
 import { AnthropicProvider } from '../provider/AnthropicProvider';
+import { MCPManager } from '../mcp/MCPManager';
 
 export class ChatViewProvider implements vscode.WebviewViewProvider {
     private view?: vscode.WebviewView;
@@ -14,9 +15,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
     constructor(
         private readonly extensionUri: vscode.Uri,
-        private readonly sessionManager: SessionManager
+        private readonly sessionManager: SessionManager,
+        private readonly mcpManager?: MCPManager
     ) {
-        this.agentRuntime = new AgentRuntime(sessionManager);
+        this.agentRuntime = new AgentRuntime(sessionManager, mcpManager);
         this.setupAgentListeners();
     }
 
@@ -102,6 +104,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             case 'abort':
                 this.agentRuntime.abort();
                 break;
+
+            case 'get_state':
+                // Refresh state from session (used after agent completes)
+                this.sendInitialState();
+                break;
         }
     }
 
@@ -137,10 +144,16 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         }
     }
 
-    private sendInitialState(): void {
+    private async sendInitialState(): Promise<void> {
+        // Ensure session is loaded from persistence
+        await this.sessionManager.ensureInitialized();
+
         const session = this.sessionManager.getCurrentSession();
         const models = this.provider.listModels();
         const currentModel = this.provider.getModelInfo(session.model);
+
+        // Also check API key status
+        const hasApiKey = await this.sessionManager.getSecretStore().hasApiKey();
 
         this.sendToWebview({
             type: 'initial_state',
@@ -158,6 +171,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             })),
             currentModelCapabilities: currentModel?.capabilities
         });
+
+        // Send API key status separately to ensure UI updates
+        this.sendToWebview({ type: 'api_key_status', hasKey: hasApiKey });
     }
 
     private sendToWebview(message: Record<string, unknown>): void {

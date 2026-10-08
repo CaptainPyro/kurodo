@@ -1,44 +1,131 @@
-import * as vscode from 'vscode';
 import * as cp from 'child_process';
 import { Tool, ToolResult, ToolContext, RiskLevel } from './types';
 
-// Commands that are considered dangerous and require explicit approval
-const DANGEROUS_COMMANDS = [
-    'rm -rf',
-    'rm -r',
-    'rmdir',
-    'del /s',
-    'format',
-    'mkfs',
-    'dd',
-    'chmod 777',
-    'curl | sh',
-    'curl | bash',
-    'wget | sh',
-    'wget | bash',
-    '> /dev/sda',
-    'git push --force',
-    'git push -f',
-    'git reset --hard',
-    'drop database',
-    'drop table',
-    'truncate',
-    'shutdown',
-    'reboot',
-    'kill -9',
-    'pkill',
-    'killall'
+// Patterns that indicate dangerous commands requiring explicit approval
+const DANGEROUS_PATTERNS: RegExp[] = [
+    // Destructive file operations
+    /\brm\s+(-[a-zA-Z]*r[a-zA-Z]*\s+|.*--recursive)/i,  // rm with recursive flag
+    /\brm\s+-[a-zA-Z]*f/i,  // rm with force flag
+    /\brmdir\b/i,
+    /\bdel\s+\/s/i,
+    /\bformat\b/i,
+    /\bmkfs\b/i,
+    /\bdd\s+if=/i,
+    />\s*\/dev\/(sd|hd|nvme)/i,  // Writing to disk devices
+
+    // Dangerous permission changes
+    /\bchmod\s+(-[a-zA-Z]*\s+)?(777|a\+rwx)/i,
+    /\bchown\s+-R\s+root/i,
+
+    // Remote code execution
+    /\bcurl\b.*\|\s*(ba)?sh/i,
+    /\bwget\b.*\|\s*(ba)?sh/i,
+    /\beval\s*\(/i,
+    /\beval\s+["'`$]/i,
+
+    // Git destructive operations
+    /\bgit\s+push\s+(-[a-zA-Z]*f|--force)/i,
+    /\bgit\s+reset\s+--hard/i,
+    /\bgit\s+clean\s+-[a-zA-Z]*f/i,
+    /\bgit\s+checkout\s+--force/i,
+    /\bgit\s+rebase\s+-i?\s*(--root|HEAD~[0-9]+)/i,
+
+    // Database destructive operations
+    /\bdrop\s+(database|table|schema|index)/i,
+    /\btruncate\s+table/i,
+    /\bdelete\s+from\s+\w+\s*(;|$|\s+where\s+1\s*=\s*1)/i,  // DELETE without WHERE or WHERE 1=1
+
+    // System operations
+    /\bshutdown\b/i,
+    /\breboot\b/i,
+    /\binit\s+[0-6]/i,
+    /\bsystemctl\s+(stop|disable|mask)\s+/i,
+
+    // Process killing (broad)
+    /\bkill\s+-9\s+-1/i,  // Kill all processes
+    /\bkillall\b/i,
+    /\bpkill\s+-9/i,
+
+    // Fork bombs and dangerous shell constructs
+    /:\(\)\s*{\s*:\|:&\s*}\s*;/,  // Fork bomb
+    /\bsudo\s+rm\b/i,
+    /\bsudo\s+dd\b/i,
+
+    // Environment manipulation
+    /\bexport\s+(PATH|LD_PRELOAD|LD_LIBRARY_PATH)\s*=/i,
+    /\bunset\s+(PATH|HOME|USER)/i,
+
+    // Credential/secret access patterns
+    /\bcat\s+.*\.(env|pem|key|crt|p12|jks)/i,
+    /\bcat\s+.*\/\.(ssh|gnupg)\//i,
+    /\bcat\s+.*\/etc\/(passwd|shadow|sudoers)/i
 ];
 
-// Commands that are safe for reading/inspection
-const SAFE_COMMANDS = [
-    'ls', 'dir', 'pwd', 'cd', 'cat', 'head', 'tail', 'less', 'more',
-    'grep', 'find', 'which', 'whereis', 'file', 'stat', 'wc',
-    'git status', 'git log', 'git diff', 'git branch', 'git show',
-    'node --version', 'npm --version', 'npm list', 'npm ls',
-    'python --version', 'pip list',
-    'echo', 'env', 'printenv', 'whoami', 'hostname', 'date',
-    'df', 'du', 'free', 'top', 'ps'
+// Patterns that are safe for reading/inspection
+const SAFE_PATTERNS: RegExp[] = [
+    // File listing and inspection
+    /^ls(\s|$)/i,
+    /^dir(\s|$)/i,
+    /^pwd(\s|$)/i,
+    /^cat\s+[^|;&]+$/i,  // cat without pipes or command chaining (and not matching dangerous patterns)
+    /^head(\s|$)/i,
+    /^tail(\s|$)/i,
+    /^less(\s|$)/i,
+    /^more(\s|$)/i,
+    /^file(\s|$)/i,
+    /^stat(\s|$)/i,
+    /^wc(\s|$)/i,
+
+    // Search tools
+    /^grep(\s|$)/i,
+    /^rg(\s|$)/i,
+    /^find\s+[^-].*-name/i,  // find with -name (search, not exec)
+    /^which(\s|$)/i,
+    /^whereis(\s|$)/i,
+
+    // Git read operations
+    /^git\s+(status|log|diff|branch|show|remote|tag|describe|rev-parse)(\s|$)/i,
+
+    // Version checks
+    /^(node|npm|npx|python|python3|pip|pip3|ruby|go|cargo|rustc)\s+(--version|-v|-V)(\s|$)/i,
+    /^npm\s+(list|ls|outdated|view|info)(\s|$)/i,
+    /^pip\s+(list|show|freeze)(\s|$)/i,
+
+    // Environment inspection
+    /^echo(\s|$)/i,
+    /^env(\s|$)/i,
+    /^printenv(\s|$)/i,
+    /^whoami(\s|$)/i,
+    /^hostname(\s|$)/i,
+    /^date(\s|$)/i,
+    /^uptime(\s|$)/i,
+
+    // System info (read-only)
+    /^df(\s|$)/i,
+    /^du(\s|$)/i,
+    /^free(\s|$)/i,
+    /^ps(\s|$)/i,
+    /^uname(\s|$)/i,
+
+    // Development tools (read operations)
+    /^npm\s+run\s+(test|lint|check|build|compile|start|dev)(\s|$)/i,
+    /^npx\s+tsc(\s|$)/i,
+    /^npx\s+eslint(\s|$)/i,
+    /^npx\s+prettier\s+--check/i,
+    /^npm\s+test(\s|$)/i,
+    /^npm\s+ci(\s|$)/i,
+    /^npm\s+install(\s|$)/i,
+
+    // Make/build
+    /^make(\s|$)/i,
+    /^cmake(\s|$)/i,
+    /^cargo\s+(build|test|check|clippy)(\s|$)/i,
+    /^go\s+(build|test|vet|fmt)(\s|$)/i,
+
+    // Directory navigation (if needed)
+    /^cd(\s|$)/i,
+    /^mkdir(\s|$)/i,
+    /^touch(\s|$)/i
 ];
 
 export class RunCommandTool implements Tool {
@@ -66,22 +153,39 @@ export class RunCommandTool implements Tool {
     };
 
     getCommandRiskLevel(command: string): RiskLevel {
-        const lowerCommand = command.toLowerCase();
+        // Normalize the command (trim and collapse whitespace)
+        const normalizedCommand = command.trim().replace(/\s+/g, ' ');
 
-        // Check for dangerous commands
-        for (const dangerous of DANGEROUS_COMMANDS) {
-            if (lowerCommand.includes(dangerous.toLowerCase())) {
+        // Check for dangerous patterns FIRST (highest priority)
+        for (const pattern of DANGEROUS_PATTERNS) {
+            if (pattern.test(normalizedCommand)) {
                 return 'high';
             }
         }
 
-        // Check for safe commands
-        for (const safe of SAFE_COMMANDS) {
-            if (lowerCommand.startsWith(safe.toLowerCase())) {
+        // Check for command chaining that might hide dangerous commands
+        if (/[;&|]/.test(normalizedCommand)) {
+            // Split by common command separators and check each part
+            const parts = normalizedCommand.split(/[;&|]+/).map(p => p.trim());
+            for (const part of parts) {
+                for (const pattern of DANGEROUS_PATTERNS) {
+                    if (pattern.test(part)) {
+                        return 'high';
+                    }
+                }
+            }
+            // Command chaining defaults to medium even if not dangerous
+            return 'medium';
+        }
+
+        // Check for safe patterns
+        for (const pattern of SAFE_PATTERNS) {
+            if (pattern.test(normalizedCommand)) {
                 return 'low';
             }
         }
 
+        // Default to medium for unknown commands
         return 'medium';
     }
 

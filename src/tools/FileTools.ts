@@ -2,6 +2,37 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import { Tool, ToolResult, ToolContext, RiskLevel } from './types';
 
+/**
+ * Validates that a path is within the workspace root.
+ * Prevents path traversal attacks.
+ */
+function validatePath(filePath: string, workspaceRoot: string): { valid: boolean; fullPath: string; error?: string } {
+    // Normalize the workspace root
+    const normalizedRoot = path.resolve(workspaceRoot);
+
+    // Resolve the full path (handles both absolute and relative)
+    let fullPath: string;
+    if (path.isAbsolute(filePath)) {
+        fullPath = path.resolve(filePath);
+    } else {
+        fullPath = path.resolve(normalizedRoot, filePath);
+    }
+
+    // Check if the resolved path is within the workspace
+    const relativePath = path.relative(normalizedRoot, fullPath);
+
+    // If the relative path starts with '..' or is absolute, it's outside the workspace
+    if (relativePath.startsWith('..') || path.isAbsolute(relativePath)) {
+        return {
+            valid: false,
+            fullPath,
+            error: `Path "${filePath}" resolves outside the workspace. Access denied.`
+        };
+    }
+
+    return { valid: true, fullPath };
+}
+
 export class ReadFileTool implements Tool {
     name = 'read_file';
     description = 'Read the contents of a file at the specified path';
@@ -20,9 +51,17 @@ export class ReadFileTool implements Tool {
 
     async execute(input: Record<string, unknown>, context: ToolContext): Promise<ToolResult> {
         const filePath = input.path as string;
-        const fullPath = path.isAbsolute(filePath)
-            ? filePath
-            : path.join(context.workspaceRoot, filePath);
+        const validation = validatePath(filePath, context.workspaceRoot);
+
+        if (!validation.valid) {
+            return {
+                success: false,
+                output: '',
+                error: validation.error
+            };
+        }
+
+        const fullPath = validation.fullPath;
 
         try {
             const uri = vscode.Uri.file(fullPath);
@@ -66,9 +105,17 @@ export class WriteFileTool implements Tool {
     async execute(input: Record<string, unknown>, context: ToolContext): Promise<ToolResult> {
         const filePath = input.path as string;
         const content = input.content as string;
-        const fullPath = path.isAbsolute(filePath)
-            ? filePath
-            : path.join(context.workspaceRoot, filePath);
+        const validation = validatePath(filePath, context.workspaceRoot);
+
+        if (!validation.valid) {
+            return {
+                success: false,
+                output: '',
+                error: validation.error
+            };
+        }
+
+        const fullPath = validation.fullPath;
 
         try {
             const uri = vscode.Uri.file(fullPath);
@@ -117,9 +164,17 @@ export class EditFileTool implements Tool {
         const filePath = input.path as string;
         const oldText = input.old_text as string;
         const newText = input.new_text as string;
-        const fullPath = path.isAbsolute(filePath)
-            ? filePath
-            : path.join(context.workspaceRoot, filePath);
+        const validation = validatePath(filePath, context.workspaceRoot);
+
+        if (!validation.valid) {
+            return {
+                success: false,
+                output: '',
+                error: validation.error
+            };
+        }
+
+        const fullPath = validation.fullPath;
 
         try {
             const uri = vscode.Uri.file(fullPath);
@@ -213,9 +268,17 @@ export class DeleteFileTool implements Tool {
 
     async execute(input: Record<string, unknown>, context: ToolContext): Promise<ToolResult> {
         const filePath = input.path as string;
-        const fullPath = path.isAbsolute(filePath)
-            ? filePath
-            : path.join(context.workspaceRoot, filePath);
+        const validation = validatePath(filePath, context.workspaceRoot);
+
+        if (!validation.valid) {
+            return {
+                success: false,
+                output: '',
+                error: validation.error
+            };
+        }
+
+        const fullPath = validation.fullPath;
 
         try {
             const uri = vscode.Uri.file(fullPath);

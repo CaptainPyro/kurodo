@@ -1,10 +1,11 @@
 import * as vscode from 'vscode';
 import { AnthropicProvider } from '../provider/AnthropicProvider';
-import { Message, ContentBlock, StreamEvent, ToolDefinition } from '../provider/types';
+import { ContentBlock, StreamEvent } from '../provider/types';
 import { ToolExecutor } from '../tools/ToolExecutor';
 import { PermissionEngine } from '../permission/PermissionEngine';
 import { SessionManager, SessionState } from '../session/SessionManager';
 import { ToolCall, ToolContext, ToolExecution } from '../tools/types';
+import { MCPManager } from '../mcp/MCPManager';
 
 export type AgentState = 'idle' | 'waiting_input' | 'processing' | 'tool_pending' | 'error';
 
@@ -24,7 +25,30 @@ export class AgentRuntime {
     private eventListeners: ((event: AgentEvent) => void)[] = [];
     private abortController: AbortController | null = null;
 
-    constructor(private sessionManager: SessionManager) {}
+    constructor(
+        private sessionManager: SessionManager,
+        private mcpManager?: MCPManager
+    ) {
+        // Register MCP tools if manager is provided
+        this.refreshMCPTools();
+    }
+
+    /**
+     * Refresh MCP tools from the MCPManager.
+     * Call this after MCP servers are initialized or reconnected.
+     */
+    refreshMCPTools(): void {
+        if (this.mcpManager) {
+            // Remove existing MCP tools
+            this.toolExecutor.unregisterToolsWithPrefix('mcp_');
+            // Register current MCP tools
+            const mcpTools = this.mcpManager.getTools();
+            if (mcpTools.length > 0) {
+                this.toolExecutor.registerTools(mcpTools);
+                console.log(`Registered ${mcpTools.length} MCP tools`);
+            }
+        }
+    }
 
     getState(): AgentState {
         return this.state;
