@@ -46,6 +46,13 @@ src/
    - Installed into local VS Code
    - Extension ID: kurodo.kurodo@0.1.0
 
+6. **Startup Performance Optimization**
+   - ChatViewProvider constructor is now lightweight
+   - AgentRuntime created lazily when webview shown (not during activation)
+   - AnthropicProvider created lazily on first use
+   - Extension activation no longer blocked by heavy tool/SDK initialization
+   - Logs activation time for monitoring
+
 ## Current Work
 
 Dogfooding phase - extension is installed and ready for real use.

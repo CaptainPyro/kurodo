@@ -7,22 +7,48 @@ import { MCPManager } from '../mcp/MCPManager';
 
 export class ChatViewProvider implements vscode.WebviewViewProvider {
     private view?: vscode.WebviewView;
-    private agentRuntime: AgentRuntime;
-    private provider = new AnthropicProvider();
+    private agentRuntime?: AgentRuntime;
+    private provider?: AnthropicProvider;
     private pendingApprovals: Map<string, {
         resolve: (approved: boolean) => void;
     }> = new Map();
+    private agentListenersSetup = false;
 
     constructor(
         private readonly extensionUri: vscode.Uri,
         private readonly sessionManager: SessionManager,
         private readonly mcpManager?: MCPManager
     ) {
-        this.agentRuntime = new AgentRuntime(sessionManager, mcpManager);
-        this.setupAgentListeners();
+        // Defer heavy initialization until webview is shown
+        // AgentRuntime and AnthropicProvider are created lazily
+    }
+
+    /**
+     * Lazily initialize the agent runtime when first needed.
+     * This defers heavy SDK and tool loading until the user actually opens Kurodo.
+     */
+    private ensureAgentRuntime(): AgentRuntime {
+        if (!this.agentRuntime) {
+            this.agentRuntime = new AgentRuntime(this.sessionManager, this.mcpManager);
+            this.setupAgentListeners();
+        }
+        return this.agentRuntime;
+    }
+
+    /**
+     * Lazily initialize the provider when first needed.
+     */
+    private ensureProvider(): AnthropicProvider {
+        if (!this.provider) {
+            this.provider = new AnthropicProvider();
+        }
+        return this.provider;
     }
 
     private setupAgentListeners(): void {
+        if (this.agentListenersSetup || !this.agentRuntime) return;
+        this.agentListenersSetup = true;
+
         this.agentRuntime.onEvent((event: AgentEvent) => {
             this.sendToWebview({
                 type: 'agent_event',
@@ -49,7 +75,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             await this.handleMessage(message);
         });
 
-        // Send initial state
+        // Initialize agent runtime lazily when webview is shown
+        // This defers heavy SDK and tool loading until user opens Kurodo
+        this.ensureAgentRuntime();
+
+        // Send initial state (async - doesn't block UI from appearing)
         this.sendInitialState();
     }
 
@@ -104,7 +134,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             }
 
             case 'abort':
-                this.agentRuntime.abort();
+                this.agentRuntime?.abort();
                 break;
 
             case 'get_state':
@@ -116,7 +146,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
     private async handleSendMessage(content: string): Promise<void> {
         try {
-            await this.agentRuntime.sendMessage(content, async (execution: ToolExecution) => {
+            const runtime = this.ensureAgentRuntime();
+            await runtime.sendMessage(content, async (execution: ToolExecution) => {
                 return this.requestToolApproval(execution);
             });
         } catch (error) {
@@ -151,8 +182,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         await this.sessionManager.ensureInitialized();
 
         const session = this.sessionManager.getCurrentSession();
-        const models = this.provider.listModels();
-        const currentModel = this.provider.getModelInfo(session.model);
+        const provider = this.ensureProvider();
+        const models = provider.listModels();
+        const currentModel = provider.getModelInfo(session.model);
 
         // Also check API key status
         const hasApiKey = await this.sessionManager.getSecretStore().hasApiKey();

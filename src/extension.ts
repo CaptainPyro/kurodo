@@ -7,19 +7,25 @@ import { MCPManager } from './mcp/MCPManager';
 let sessionManager: SessionManager;
 let mcpManager: MCPManager;
 
+// Startup timing (minimal - logs total activation time only)
+let activationStart: number;
+
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
+    activationStart = Date.now();
     console.log('Kurodo is activating...');
 
     // Initialize secret storage
     const secretStore = new SecretStore(context.secrets);
 
-    // Initialize session manager
+    // Initialize session manager (async session loading starts but doesn't block)
     sessionManager = new SessionManager(context, secretStore);
 
     // Initialize MCP manager
     mcpManager = new MCPManager();
 
     // Register the chat webview provider
+    // NOTE: ChatViewProvider constructor is now lightweight - heavy initialization
+    // (AgentRuntime, tools, etc.) is deferred until webview is shown
     const chatViewProvider = new ChatViewProvider(context.extensionUri, sessionManager, mcpManager);
 
     context.subscriptions.push(
@@ -69,7 +75,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         })
     );
 
-    console.log('Kurodo activated successfully');
+    console.log(`Kurodo activated in ${Date.now() - activationStart}ms`);
 }
 
 export function deactivate(): void {

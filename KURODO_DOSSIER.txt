@@ -733,11 +733,17 @@ e97b42f - Update README with security documentation and testing
          - KURODO_DOSSIER.txt: Exhaustive human-readable documentation
          - CLAUDE_HANDOFF.md: Concise Claude session handoff
 
-(next)  - Package and install for dogfooding
+d41ccd3 - Package v0.1 for dogfooding
          - Added .vscodeignore for clean VSIX
          - Updated README with installation instructions
          - Packaged with Node 20.20.2
          - Installed into local VS Code
+
+(next)  - Optimize startup performance
+         - ChatViewProvider constructor now lightweight
+         - AgentRuntime created lazily when webview shown
+         - AnthropicProvider created lazily on first use
+         - Extension activation no longer blocked by heavy initialization
 
 ============================================================
 26. COMPLETED WORK
@@ -772,6 +778,11 @@ Phase 9: Security Hardening
 
 Phase 10: Code Quality
 [COMPLETE] ESLint configuration, lint fixes
+
+Phase 11: Startup Performance
+[COMPLETE] Lazy initialization of AgentRuntime and AnthropicProvider.
+ChatViewProvider constructor is now lightweight - heavy initialization
+deferred until webview is actually shown.
 
 ============================================================
 27. CURRENTLY IN PROGRESS
@@ -913,12 +924,14 @@ Do NOT begin new work without user direction.
 ============================================================
 
 Date: 2026-10-08
-Commit: (packaging commit)
-Session: v0.1 packaging and installation for dogfooding
+Commit: (startup optimization commit)
+Session: Startup performance optimization
 Author: Claude (via Claude Code)
 
-Packaging details:
-- Node version: 20.20.2 (via nvm at ~/.config/nvm)
-- VSIX file: dist/kurodo-0.1.0.vsix
-- Size: 72 KB
-- Installation: code --install-extension dist/kurodo-0.1.0.vsix
+Changes:
+- ChatViewProvider constructor now lightweight
+- AgentRuntime created lazily in ensureAgentRuntime()
+- AnthropicProvider created lazily in ensureProvider()
+- Extension activation no longer blocked by heavy initialization
+- All 28 tests passing
+- VSIX repackaged: dist/kurodo-0.1.0.vsix (71.6 KB)
