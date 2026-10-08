@@ -226,7 +226,7 @@ export class ListFilesTool implements Tool {
         required: ['pattern']
     };
 
-    async execute(input: Record<string, unknown>, context: ToolContext): Promise<ToolResult> {
+    async execute(input: Record<string, unknown>, _context: ToolContext): Promise<ToolResult> {
         const pattern = input.pattern as string;
         const maxResults = (input.maxResults as number) || 100;
 

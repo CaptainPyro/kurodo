@@ -90,16 +90,18 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                 this.sendInitialState();
                 break;
 
-            case 'get_api_key_status':
+            case 'get_api_key_status': {
                 const hasKey = await this.sessionManager.getSecretStore().hasApiKey();
                 this.sendToWebview({ type: 'api_key_status', hasKey });
                 break;
+            }
 
-            case 'set_api_key':
+            case 'set_api_key': {
                 await this.sessionManager.getSecretStore().promptForApiKey();
                 const newHasKey = await this.sessionManager.getSecretStore().hasApiKey();
                 this.sendToWebview({ type: 'api_key_status', hasKey: newHasKey });
                 break;
+            }
 
             case 'abort':
                 this.agentRuntime.abort();
@@ -182,7 +184,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         }
     }
 
-    private getHtmlContent(webview: vscode.Webview): string {
+    private getHtmlContent(_webview: vscode.Webview): string {
         return `<!DOCTYPE html>
 <html lang="en">
 <head>

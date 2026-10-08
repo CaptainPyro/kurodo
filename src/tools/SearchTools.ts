@@ -33,7 +33,7 @@ export class SearchFilesTool implements Tool {
         required: ['query']
     };
 
-    async execute(input: Record<string, unknown>, context: ToolContext): Promise<ToolResult> {
+    async execute(input: Record<string, unknown>, _context: ToolContext): Promise<ToolResult> {
         const query = input.query as string;
         const include = input.include as string | undefined;
         const exclude = input.exclude as string | undefined;

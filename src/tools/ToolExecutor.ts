@@ -1,5 +1,4 @@
-import * as vscode from 'vscode';
-import { Tool, ToolCall, ToolResult, ToolContext, ToolExecution, RiskLevel } from './types';
+import { Tool, ToolCall, ToolContext, ToolExecution, RiskLevel } from './types';
 import { ToolDefinition } from '../provider/types';
 import { ReadFileTool, WriteFileTool, EditFileTool, ListFilesTool, DeleteFileTool } from './FileTools';
 import { SearchFilesTool } from './SearchTools';
