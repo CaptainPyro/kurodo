@@ -26,8 +26,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // Register the chat webview provider
     // NOTE: ChatViewProvider constructor is now lightweight - heavy initialization
     // (AgentRuntime, tools, etc.) is deferred until webview is shown
+    console.log('[Kurodo] Creating ChatViewProvider...');
     const chatViewProvider = new ChatViewProvider(context.extensionUri, sessionManager, mcpManager);
+    console.log('[Kurodo] ChatViewProvider created');
 
+    console.log('[Kurodo] Registering WebviewViewProvider for kurodo.chatView...');
     context.subscriptions.push(
         vscode.window.registerWebviewViewProvider(
             'kurodo.chatView',
@@ -39,6 +42,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
         )
     );
+    console.log('[Kurodo] WebviewViewProvider registered');
 
     // Register commands
     context.subscriptions.push(

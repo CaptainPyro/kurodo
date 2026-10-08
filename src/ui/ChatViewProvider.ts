@@ -29,8 +29,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
      */
     private ensureAgentRuntime(): AgentRuntime {
         if (!this.agentRuntime) {
+            console.log('[Kurodo] Creating AgentRuntime...');
             this.agentRuntime = new AgentRuntime(this.sessionManager, this.mcpManager);
+            console.log('[Kurodo] AgentRuntime created, setting up listeners...');
             this.setupAgentListeners();
+            console.log('[Kurodo] AgentRuntime fully initialized');
         }
         return this.agentRuntime;
     }
@@ -62,6 +65,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         _context: vscode.WebviewViewResolveContext,
         _token: vscode.CancellationToken
     ): void {
+        console.log('[Kurodo] resolveWebviewView called');
+
+        // CRITICAL: Only set up webview structure here
+        // NO backend initialization - webview must appear instantly
         this.view = webviewView;
 
         webviewView.webview.options = {
@@ -75,12 +82,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             await this.handleMessage(message);
         });
 
-        // Initialize agent runtime lazily when webview is shown
-        // This defers heavy SDK and tool loading until user opens Kurodo
-        this.ensureAgentRuntime();
-
-        // Send initial state (async - doesn't block UI from appearing)
-        this.sendInitialState();
+        console.log('[Kurodo] Webview ready, HTML set');
+        // Backend initialization happens when webview sends 'webview_ready' message
     }
 
     refresh(): void {
@@ -91,6 +94,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
     private async handleMessage(message: Record<string, unknown>): Promise<void> {
         switch (message.type) {
+            case 'webview_ready':
+                // Webview has loaded - now initialize backend (deferred, resilient)
+                console.log('[Kurodo] Webview ready message received, initializing backend...');
+                this.initializeBackend();
+                break;
+
             case 'send_message':
                 await this.handleSendMessage(message.content as string);
                 break;
@@ -141,6 +150,29 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                 // Refresh state from session (used after agent completes)
                 this.sendInitialState();
                 break;
+        }
+    }
+
+    /**
+     * Initialize backend components after webview is ready.
+     * Failures are handled gracefully - UI stays visible.
+     */
+    private async initializeBackend(): Promise<void> {
+        try {
+            // Initialize agent runtime (creates tools, etc.)
+            this.ensureAgentRuntime();
+            console.log('[Kurodo] Agent runtime initialized');
+
+            // Send initial state to webview
+            await this.sendInitialState();
+            console.log('[Kurodo] Initial state sent');
+        } catch (error) {
+            console.error('[Kurodo] Backend initialization error:', error);
+            // Send error state to webview instead of crashing
+            this.sendToWebview({
+                type: 'error',
+                error: `Initialization failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+            });
         }
     }
 
@@ -536,8 +568,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         const apiKeyNotice = document.getElementById('api-key-notice');
         const setApiKeyBtn = document.getElementById('set-api-key-btn');
 
-        // Initialize
-        vscode.postMessage({ type: 'get_api_key_status' });
+        // Signal webview is ready - triggers backend initialization
+        vscode.postMessage({ type: 'webview_ready' });
 
         // Event listeners
         sendBtn.addEventListener('click', sendMessage);
